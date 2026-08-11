@@ -9,9 +9,11 @@ A custom Home Assistant integration that turns [Brrr](https://brrr.now/) into a 
 - UI setup; no webhook secret in automation YAML.
 - Multiple shared or device-specific Brrr webhook targets.
 - Native **Brrr: Send notification** action in the visual automation editor.
+- A **Send test notification** button for every configured target.
 - Title, subtitle, message, thread ID, sound, interruption level, critical volume, Focus filter, expiration, icon, image, and open URL fields.
 - Public HTTPS URLs or opt-in images selected from Home Assistant's Media Library.
-- Clear Home Assistant errors for invalid input, authentication failures, and network failures.
+- Translated action labels, friendly option names, and native Home Assistant icons.
+- Clear errors and bounded retries for authentication, rate-limit, server, timeout, and connection failures.
 - Redacted diagnostics.
 
 ## Installation
@@ -31,7 +33,7 @@ A custom Home Assistant integration that turns [Brrr](https://brrr.now/) into a 
 4. Search for **Brrr Notifications**.
 5. Paste a shared or device-specific webhook URL from the Brrr app and give the target a name.
 
-The setup flow validates the webhook format but does not send a test notification, because Brrr does not document a non-delivering credential-validation endpoint.
+The setup flow validates the webhook format without sending anything. After setup, open the target's device page and press **Send test notification** to perform a real delivery test.
 
 ## Visual automation action
 
@@ -60,7 +62,9 @@ This behavior is disabled by default and requires:
 - An externally reachable HTTPS Home Assistant URL.
 - A local Media Library image no larger than 10 MB.
 
-Home Assistant serves `/local` without authentication. Use only non-sensitive images. Generated filenames are content hashes, and expired files are removed the next time a Media Library image is sent. The default retention is 24 hours.
+Home Assistant serves `/local` without authentication. Use only non-sensitive images. Generated filenames contain random, unguessable tokens. Expired files are removed when Brrr starts, hourly while it is loaded, and whenever another Media Library image is sent. The default retention is 24 hours.
+
+To remove all generated public copies immediately, run **Brrr: Clean up public media** from **Developer Tools → Actions**.
 
 For reusable icons, placing intentionally public files under `/config/www/brrr-icons/` and using their external HTTPS URLs is simpler and avoids cache copies.
 
@@ -73,7 +77,7 @@ Remove all Brrr entries under **Settings → Devices & services → Brrr Notific
 - Webhook keys are stored in the Home Assistant config entry and sent to Brrr using the `Authorization: Bearer` header.
 - Keys are never included in action data or diagnostics.
 - Icon and image URLs are sent to Brrr.
-- Media Library export creates unauthenticated public copies; it is opt-in.
+- Media Library export creates temporary unauthenticated public copies with random filenames; it is opt-in.
 
 ## License
 
