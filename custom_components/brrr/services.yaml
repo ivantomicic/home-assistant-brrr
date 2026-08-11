@@ -1,10 +1,12 @@
 send_notification:
   fields:
-    config_entry_id:
+    target_device_ids:
       required: true
       selector:
-        config_entry:
-          integration: brrr
+        device:
+          filter:
+            - integration: brrr
+          multiple: true
     title:
       selector:
         text:

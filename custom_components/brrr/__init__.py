@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -16,6 +17,7 @@ from homeassistant.const import CONF_NAME, Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_track_time_interval
 
@@ -42,6 +44,7 @@ from .const import (
     ATTR_OPEN_URL,
     ATTR_SOUND,
     ATTR_SUBTITLE,
+    ATTR_TARGET_DEVICE_IDS,
     ATTR_THREAD_ID,
     ATTR_TITLE,
     ATTR_VOLUME,
@@ -84,7 +87,10 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 SERVICE_SCHEMA = vol.Schema(
     {
-        vol.Required(ATTR_CONFIG_ENTRY_ID): cv.string,
+        # Keep accepting the original config-entry field so existing automations
+        # continue to run after the visual editor moves to multi-device targets.
+        vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string,
+        vol.Optional(ATTR_TARGET_DEVICE_IDS): vol.All(cv.ensure_list, [cv.string]),
         vol.Optional(ATTR_TITLE): cv.string,
         vol.Optional(ATTR_SUBTITLE): cv.string,
         vol.Required(ATTR_MESSAGE): cv.string,
@@ -222,8 +228,14 @@ async def async_send_payload(
 
 async def _async_send_notification(hass: HomeAssistant, call: ServiceCall) -> None:
     """Handle the visual Brrr notification action."""
-    entry = _select_entry(hass, call.data.get(ATTR_CONFIG_ENTRY_ID))
+    entries = _select_entries(
+        hass,
+        call.data.get(ATTR_CONFIG_ENTRY_ID),
+        call.data.get(ATTR_TARGET_DEVICE_IDS),
+    )
     data = dict(call.data)
+    data.pop(ATTR_CONFIG_ENTRY_ID, None)
+    data.pop(ATTR_TARGET_DEVICE_IDS, None)
 
     if ATTR_ICON_URL in data and ATTR_ICON_MEDIA in data:
         raise ServiceValidationError(
@@ -234,9 +246,17 @@ async def _async_send_notification(hass: HomeAssistant, call: ServiceCall) -> No
             "Choose either Image URL or Image from Media Library"
         )
 
-    public_media_enabled = bool(entry.data.get(CONF_PUBLIC_MEDIA_ENABLED, False))
-    ttl_hours = int(
-        entry.data.get(CONF_PUBLIC_MEDIA_TTL_HOURS, DEFAULT_PUBLIC_MEDIA_TTL_HOURS)
+    public_media_enabled = all(
+        bool(entry.data.get(CONF_PUBLIC_MEDIA_ENABLED, False)) for entry in entries
+    )
+    ttl_hours = min(
+        int(
+            entry.data.get(
+                CONF_PUBLIC_MEDIA_TTL_HOURS,
+                DEFAULT_PUBLIC_MEDIA_TTL_HOURS,
+            )
+        )
+        for entry in entries
     )
 
     try:
@@ -260,7 +280,10 @@ async def _async_send_notification(hass: HomeAssistant, call: ServiceCall) -> No
     _validate_https_asset(data.get(ATTR_ICON_URL), "Icon URL")
     _validate_https_asset(data.get(ATTR_IMAGE_URL), "Image URL")
 
-    await async_send_payload(hass, entry, build_payload(data))
+    payload = build_payload(data)
+    await asyncio.gather(
+        *(async_send_payload(hass, entry, payload) for entry in entries)
+    )
 
 
 async def _async_cleanup_media(hass: HomeAssistant, call: ServiceCall) -> None:
@@ -314,6 +337,62 @@ def _select_entry(hass: HomeAssistant, entry_id: str | None) -> BrrrConfigEntry:
             "Select a Brrr target when more than one is configured"
         )
     return entries[0]
+
+
+def _select_entries(
+    hass: HomeAssistant,
+    entry_id: str | None,
+    device_ids: list[str] | None,
+) -> list[BrrrConfigEntry]:
+    """Resolve one legacy config entry or multiple Brrr target devices."""
+    if entry_id and device_ids:
+        raise ServiceValidationError(
+            "Choose either the legacy target or the Brrr targets, not both"
+        )
+    if not device_ids:
+        return [_select_entry(hass, entry_id)]
+
+    device_registry = dr.async_get(hass)
+    entry_ids: list[str] = []
+    for device_id in device_ids:
+        device = device_registry.async_get(device_id)
+        if device is None:
+            raise ServiceValidationError(
+                f"The selected Brrr target device {device_id} no longer exists"
+            )
+
+        candidate_entry_id = getattr(device, "config_entry_id", None)
+        if candidate_entry_id is None:
+            # Compatibility with Home Assistant versions where devices could be
+            # attached to more than one config entry.
+            candidate_ids = getattr(device, "config_entries", set())
+            candidate_entry_id = next(
+                (
+                    candidate_id
+                    for candidate_id in candidate_ids
+                    if (
+                        candidate := hass.config_entries.async_get_entry(
+                            candidate_id
+                        )
+                    )
+                    and candidate.domain == DOMAIN
+                ),
+                None,
+            )
+
+        candidate = (
+            hass.config_entries.async_get_entry(candidate_entry_id)
+            if candidate_entry_id
+            else None
+        )
+        if candidate is None or candidate.domain != DOMAIN:
+            raise ServiceValidationError(
+                f"Device {device_id} is not a Brrr notification target"
+            )
+        if candidate.entry_id not in entry_ids:
+            entry_ids.append(candidate.entry_id)
+
+    return [_select_entry(hass, selected_entry_id) for selected_entry_id in entry_ids]
 
 
 def _validate_https_asset(value: str | None, label: str) -> None:

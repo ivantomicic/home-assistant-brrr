@@ -15,6 +15,7 @@ SERVICE_SEND_NOTIFICATION = "send_notification"
 SERVICE_CLEANUP_MEDIA = "cleanup_media"
 
 ATTR_CONFIG_ENTRY_ID = "config_entry_id"
+ATTR_TARGET_DEVICE_IDS = "target_device_ids"
 ATTR_TITLE = "title"
 ATTR_SUBTITLE = "subtitle"
 ATTR_MESSAGE = "message"

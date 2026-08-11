@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- Multi-target delivery from one visual automation action, with concurrent sends and backward compatibility for existing single-target actions.
+
 ## [0.1.0] - 2026-08-11
 
 ### Added

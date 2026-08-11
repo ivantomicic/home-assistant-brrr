@@ -89,9 +89,9 @@
       "name": "Send notification",
       "description": "Send a rich push notification through a configured Brrr webhook target.",
       "fields": {
-        "config_entry_id": {
-          "name": "Target",
-          "description": "Brrr webhook target that receives the notification."
+        "target_device_ids": {
+          "name": "Targets",
+          "description": "One or more Brrr webhook targets that receive the notification."
         },
         "title": {
           "name": "Title",
