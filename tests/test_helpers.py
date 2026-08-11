@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import importlib.util
-from pathlib import Path
 import unittest
+from pathlib import Path
 
 
 def _load_helpers():
@@ -23,7 +23,10 @@ class NormalizeWebhookKeyTests(unittest.TestCase):
     """Test webhook key normalization."""
 
     def test_accepts_key(self) -> None:
-        self.assertEqual(helpers.normalize_webhook_key(" br_usr_abc12345 "), "br_usr_abc12345")
+        self.assertEqual(
+            helpers.normalize_webhook_key(" br_usr_abc12345 "),
+            "br_usr_abc12345",
+        )
 
     def test_extracts_key_from_url(self) -> None:
         self.assertEqual(
@@ -56,6 +59,19 @@ class PayloadTests(unittest.TestCase):
             ),
             {"message": "Hello", "title": "Home Assistant", "volume": 0},
         )
+
+
+class RetryAfterTests(unittest.TestCase):
+    """Test Retry-After parsing for bounded API retries."""
+
+    def test_parses_seconds(self) -> None:
+        self.assertEqual(helpers.parse_retry_after("1.5"), 1.5)
+
+    def test_uses_default_for_invalid_or_negative_values(self) -> None:
+        self.assertEqual(helpers.parse_retry_after(None), 0.5)
+        self.assertEqual(helpers.parse_retry_after("tomorrow"), 0.5)
+        self.assertEqual(helpers.parse_retry_after("-1"), 0.5)
+        self.assertEqual(helpers.parse_retry_after("inf"), 0.5)
 
 
 if __name__ == "__main__":
