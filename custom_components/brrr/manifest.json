@@ -1,0 +1,12 @@
+{
+  "domain": "brrr",
+  "name": "Brrr Notifications",
+  "codeowners": ["@ivantomicic"],
+  "config_flow": true,
+  "documentation": "https://github.com/ivantomicic/home-assistant-brrr",
+  "integration_type": "service",
+  "iot_class": "cloud_push",
+  "issue_tracker": "https://github.com/ivantomicic/home-assistant-brrr/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

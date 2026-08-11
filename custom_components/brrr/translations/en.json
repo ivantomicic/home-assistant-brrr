@@ -1,0 +1,45 @@
+{
+  "title": "Brrr Notifications",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add a Brrr notification target",
+        "description": "Paste a shared or device-specific webhook URL from the Brrr app. Home Assistant stores the key and sends it in an Authorization header. Enabling Media Library export makes selected images temporarily public under `/local/brrr/`.",
+        "data": {
+          "name": "Target name",
+          "webhook_key": "Webhook URL or key",
+          "public_media_enabled": "Allow temporary public Media Library images",
+          "public_media_ttl_hours": "Public image retention (hours)"
+        },
+        "data_description": {
+          "name": "For example, Ivan's iPhone or All devices.",
+          "webhook_key": "The URL already contains the secret. It is normalized and never written into automation YAML.",
+          "public_media_enabled": "Required only for the Icon/Image from Media Library action fields. Do not select sensitive images.",
+          "public_media_ttl_hours": "Expired generated files are removed the next time a Media Library image is sent."
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure Brrr",
+        "description": "Leave the webhook field empty to keep the current key.",
+        "data": {
+          "name": "Target name",
+          "webhook_key": "New webhook URL or key",
+          "public_media_enabled": "Allow temporary public Media Library images",
+          "public_media_ttl_hours": "Public image retention (hours)"
+        },
+        "data_description": {
+          "name": "Name shown in Brrr actions.",
+          "webhook_key": "Use this after rotating the webhook secret in Brrr.",
+          "public_media_enabled": "Required only for Media Library image fields.",
+          "public_media_ttl_hours": "Retention for generated public copies."
+        }
+      }
+    },
+    "error": {
+      "invalid_webhook": "Enter a Brrr webhook URL or a key beginning with br_."
+    },
+    "abort": {
+      "already_configured": "This Brrr webhook target is already configured."
+    }
+  }
+}
