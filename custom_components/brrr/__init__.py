@@ -61,7 +61,7 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 SERVICE_SCHEMA = vol.Schema(
     {
-        vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string,
+        vol.Required(ATTR_CONFIG_ENTRY_ID): cv.string,
         vol.Optional(ATTR_TITLE): cv.string,
         vol.Optional(ATTR_SUBTITLE): cv.string,
         vol.Required(ATTR_MESSAGE): cv.string,
