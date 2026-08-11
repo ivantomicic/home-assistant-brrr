@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from functools import partial
 from typing import Any
 from urllib.parse import urlsplit
@@ -10,14 +12,24 @@ from urllib.parse import urlsplit
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
-from homeassistant.const import CONF_NAME
+from homeassistant.const import CONF_NAME, Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.event import async_track_time_interval
 
-from .api import BrrrAuthenticationError, BrrrClient, BrrrConnectionError
+from .api import (
+    BrrrAuthenticationError,
+    BrrrClient,
+    BrrrConnectionError,
+    BrrrRateLimitError,
+    BrrrRequestError,
+    BrrrServerError,
+    BrrrTimeoutError,
+)
 from .const import (
+    API_TIMEOUT_SECONDS,
     ATTR_CONFIG_ENTRY_ID,
     ATTR_EXPIRATION_DATE,
     ATTR_FILTER_CRITERIA,
@@ -39,11 +51,22 @@ from .const import (
     DEFAULT_PUBLIC_MEDIA_TTL_HOURS,
     DOMAIN,
     INTERRUPTION_LEVELS,
+    MEDIA_CLEANUP_INTERVAL_HOURS,
+    SERVICE_CLEANUP_MEDIA,
     SERVICE_SEND_NOTIFICATION,
     SOUNDS,
 )
 from .helpers import build_payload
-from .media import BrrrMediaError, async_resolve_media_image
+from .media import (
+    BrrrMediaError,
+    async_cleanup_media_cache,
+    async_resolve_media_image,
+)
+
+PLATFORMS = [Platform.BUTTON]
+
+_DATA_CLEANUP_UNSUB = "cleanup_unsub"
+_DATA_LOADED_ENTRIES = "loaded_entries"
 
 
 @dataclass(slots=True)
@@ -82,12 +105,25 @@ SERVICE_SCHEMA = vol.Schema(
 
 async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     """Set up global Brrr actions."""
+    hass.data.setdefault(
+        DOMAIN,
+        {
+            _DATA_LOADED_ENTRIES: set(),
+        },
+    )
     if not hass.services.has_service(DOMAIN, SERVICE_SEND_NOTIFICATION):
         hass.services.async_register(
             DOMAIN,
             SERVICE_SEND_NOTIFICATION,
             partial(_async_send_notification, hass),
             schema=SERVICE_SCHEMA,
+        )
+    if not hass.services.has_service(DOMAIN, SERVICE_CLEANUP_MEDIA):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_CLEANUP_MEDIA,
+            partial(_async_cleanup_media, hass),
+            schema=vol.Schema({}),
         )
     return True
 
@@ -100,12 +136,88 @@ async def async_setup_entry(hass: HomeAssistant, entry: BrrrConfigEntry) -> bool
             entry.data[CONF_WEBHOOK_KEY],
         )
     )
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    domain_data = hass.data[DOMAIN]
+    loaded_entries: set[str] = domain_data[_DATA_LOADED_ENTRIES]
+    loaded_entries.add(entry.entry_id)
+
+    await async_cleanup_media_cache(hass, _minimum_media_ttl_hours(hass))
+    if _DATA_CLEANUP_UNSUB not in domain_data:
+        domain_data[_DATA_CLEANUP_UNSUB] = async_track_time_interval(
+            hass,
+            partial(_async_scheduled_media_cleanup, hass),
+            timedelta(hours=MEDIA_CLEANUP_INTERVAL_HOURS),
+        )
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: BrrrConfigEntry) -> bool:
     """Unload a Brrr target."""
+    if not await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
+        return False
+
+    domain_data = hass.data[DOMAIN]
+    loaded_entries: set[str] = domain_data[_DATA_LOADED_ENTRIES]
+    loaded_entries.discard(entry.entry_id)
+    if not loaded_entries:
+        cleanup_unsub: Callable[[], None] | None = domain_data.pop(
+            _DATA_CLEANUP_UNSUB,
+            None,
+        )
+        if cleanup_unsub is not None:
+            cleanup_unsub()
     return True
+
+
+async def async_send_payload(
+    hass: HomeAssistant,
+    entry: BrrrConfigEntry,
+    payload: dict[str, Any],
+) -> None:
+    """Send a payload and translate Brrr failures into Home Assistant errors."""
+    try:
+        await entry.runtime_data.client.async_send(payload)
+    except BrrrAuthenticationError as err:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="authentication_failed",
+            translation_placeholders={
+                "target": entry.data.get(CONF_NAME, entry.title),
+            },
+        ) from err
+    except BrrrRateLimitError as err:
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="rate_limited",
+            translation_placeholders={
+                "retry_after": f"{err.retry_after:g}",
+            },
+        ) from err
+    except BrrrServerError as err:
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="server_error",
+            translation_placeholders={"status": str(err.status)},
+        ) from err
+    except BrrrTimeoutError as err:
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="timeout",
+            translation_placeholders={"timeout": str(API_TIMEOUT_SECONDS)},
+        ) from err
+    except BrrrRequestError as err:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="request_rejected",
+            translation_placeholders={"status": str(err.status)},
+        ) from err
+    except BrrrConnectionError as err:
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="connection_failed",
+            translation_placeholders={"reason": str(err)},
+        ) from err
 
 
 async def _async_send_notification(hass: HomeAssistant, call: ServiceCall) -> None:
@@ -114,9 +226,13 @@ async def _async_send_notification(hass: HomeAssistant, call: ServiceCall) -> No
     data = dict(call.data)
 
     if ATTR_ICON_URL in data and ATTR_ICON_MEDIA in data:
-        raise ServiceValidationError("Choose either Icon URL or Icon from Media Library")
+        raise ServiceValidationError(
+            "Choose either Icon URL or Icon from Media Library"
+        )
     if ATTR_IMAGE_URL in data and ATTR_IMAGE_MEDIA in data:
-        raise ServiceValidationError("Choose either Image URL or Image from Media Library")
+        raise ServiceValidationError(
+            "Choose either Image URL or Image from Media Library"
+        )
 
     public_media_enabled = bool(entry.data.get(CONF_PUBLIC_MEDIA_ENABLED, False))
     ttl_hours = int(
@@ -144,15 +260,34 @@ async def _async_send_notification(hass: HomeAssistant, call: ServiceCall) -> No
     _validate_https_asset(data.get(ATTR_ICON_URL), "Icon URL")
     _validate_https_asset(data.get(ATTR_IMAGE_URL), "Image URL")
 
-    payload = build_payload(data)
-    try:
-        await entry.runtime_data.client.async_send(payload)
-    except BrrrAuthenticationError as err:
-        raise ServiceValidationError(
-            f"Brrr rejected the webhook key for {entry.data.get(CONF_NAME, entry.title)}"
-        ) from err
-    except BrrrConnectionError as err:
-        raise HomeAssistantError(str(err)) from err
+    await async_send_payload(hass, entry, build_payload(data))
+
+
+async def _async_cleanup_media(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Remove all generated public-media files on demand."""
+    await async_cleanup_media_cache(
+        hass,
+        _minimum_media_ttl_hours(hass),
+        remove_all=True,
+    )
+
+
+async def _async_scheduled_media_cleanup(
+    hass: HomeAssistant,
+    now: datetime,
+) -> None:
+    """Remove expired generated public-media files."""
+    await async_cleanup_media_cache(hass, _minimum_media_ttl_hours(hass))
+
+
+def _minimum_media_ttl_hours(hass: HomeAssistant) -> int:
+    """Use the shortest configured retention across public-media targets."""
+    values = [
+        int(entry.data.get(CONF_PUBLIC_MEDIA_TTL_HOURS, DEFAULT_PUBLIC_MEDIA_TTL_HOURS))
+        for entry in hass.config_entries.async_entries(DOMAIN)
+        if entry.data.get(CONF_PUBLIC_MEDIA_ENABLED, False)
+    ]
+    return min(values, default=DEFAULT_PUBLIC_MEDIA_TTL_HOURS)
 
 
 def _select_entry(hass: HomeAssistant, entry_id: str | None) -> BrrrConfigEntry:
@@ -171,9 +306,13 @@ def _select_entry(hass: HomeAssistant, entry_id: str | None) -> BrrrConfigEntry:
         if entry.state is ConfigEntryState.LOADED
     ]
     if not entries:
-        raise ServiceValidationError("Configure a Brrr target before sending notifications")
+        raise ServiceValidationError(
+            "Configure a Brrr target before sending notifications"
+        )
     if len(entries) > 1:
-        raise ServiceValidationError("Select a Brrr target when more than one is configured")
+        raise ServiceValidationError(
+            "Select a Brrr target when more than one is configured"
+        )
     return entries[0]
 
 

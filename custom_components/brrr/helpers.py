@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import re
 from typing import Any, Mapping
 from urllib.parse import urlsplit
@@ -33,6 +34,17 @@ def webhook_fingerprint(webhook_key: str) -> str:
     """Return a non-secret identifier for a webhook key."""
     digest = hashlib.sha256(webhook_key.encode()).hexdigest()
     return f"webhook_{digest[:20]}"
+
+
+def parse_retry_after(value: str | None, *, default: float = 0.5) -> float:
+    """Parse a non-negative Retry-After delay expressed in seconds."""
+    if value is None:
+        return default
+    try:
+        delay = float(value)
+    except ValueError:
+        return default
+    return delay if math.isfinite(delay) and delay >= 0 else default
 
 
 def build_payload(data: Mapping[str, Any]) -> dict[str, Any]:

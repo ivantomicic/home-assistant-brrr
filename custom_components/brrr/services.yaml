@@ -1,82 +1,55 @@
 send_notification:
-  name: Send notification
-  description: Send a rich push notification through a configured Brrr webhook target.
   fields:
     config_entry_id:
-      name: Target
-      description: Brrr webhook target that receives the notification.
       required: true
       selector:
         config_entry:
           integration: brrr
     title:
-      name: Title
-      description: First line of the notification.
       selector:
         text:
     message:
-      name: Message
-      description: Main notification text. Templates are supported in automations.
       required: true
       selector:
         text:
           multiline: true
     appearance:
-      name: Appearance
-      description: Optional subtitle, icon, and expanded image.
       collapsed: true
       fields:
         subtitle:
-          name: Subtitle
-          description: Line below the title. Brrr does not display it when an icon is used.
           selector:
             text:
         icon_url:
-          name: Icon URL
-          description: Public HTTPS image shown in place of the Brrr app icon.
           selector:
             text:
               type: url
         icon_media:
-          name: Icon from Media Library
-          description: Image exported temporarily through Home Assistant. Public media export must be enabled.
           selector:
             media:
               accept:
                 - image/*
         image_url:
-          name: Image URL
-          description: Public HTTPS image displayed in the expanded notification.
           selector:
             text:
               type: url
         image_media:
-          name: Image from Media Library
-          description: Image exported temporarily through Home Assistant. Public media export must be enabled.
           selector:
             media:
               accept:
                 - image/*
     delivery_options:
-      name: Delivery options
-      description: Optional grouping, behavior, sound, and delivery controls.
       collapsed: true
       fields:
         thread_id:
-          name: Thread ID
-          description: Identifier used by iOS to group related notifications.
           selector:
             text:
         open_url:
-          name: Open URL
-          description: URL or app deep link opened when the notification is selected.
           selector:
             text:
         sound:
-          name: Sound
-          description: Sound played by Brrr on iPhone or iPad.
           selector:
             select:
+              translation_key: sound
               mode: dropdown
               options:
                 - default
@@ -97,10 +70,9 @@ send_notification:
                 - upbeat_bells
                 - warm_soft_error
         interruption_level:
-          name: Interruption level
-          description: Controls how prominently iOS presents the notification.
           selector:
             select:
+              translation_key: interruption_level
               mode: dropdown
               options:
                 - passive
@@ -108,8 +80,6 @@ send_notification:
                 - time-sensitive
                 - critical
         volume:
-          name: Critical alert volume
-          description: Volume from 0 to 1. Only used with the critical interruption level.
           selector:
             number:
               min: 0
@@ -117,12 +87,11 @@ send_notification:
               step: 0.1
               mode: slider
         filter_criteria:
-          name: Focus filter criterion
-          description: Criterion matched by a configured iOS Focus filter.
           selector:
             text:
         expiration_date:
-          name: Expiration date
-          description: ISO 8601 time after which Apple should stop retrying delivery.
           selector:
             datetime:
+
+cleanup_media:
+  fields: {}

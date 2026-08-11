@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import hashlib
 import mimetypes
-from pathlib import Path
+import secrets
 import shutil
 import time
+from pathlib import Path
 from typing import Any, Mapping
 from urllib.parse import urljoin, urlsplit
 
@@ -19,6 +19,22 @@ from .const import MAX_MEDIA_BYTES, MEDIA_CACHE_DIRECTORY
 
 class BrrrMediaError(ValueError):
     """Raised when selected media cannot safely be exposed to Brrr."""
+
+
+async def async_cleanup_media_cache(
+    hass: HomeAssistant,
+    ttl_hours: int,
+    *,
+    remove_all: bool = False,
+) -> int:
+    """Remove expired or all generated public-media files."""
+    cache_dir = Path(hass.config.path("www", MEDIA_CACHE_DIRECTORY))
+    return await hass.async_add_executor_job(
+        _cleanup_cache,
+        cache_dir,
+        ttl_hours,
+        remove_all,
+    )
 
 
 async def async_resolve_media_image(
@@ -48,7 +64,8 @@ async def async_resolve_media_image(
     source_path = Path(resolved.path) if resolved.path else None
     if source_path is None:
         raise BrrrMediaError(
-            "This Media Library item cannot be exported. Use an HTTPS image URL instead."
+            "This Media Library item cannot be exported. "
+            "Use an HTTPS image URL instead."
         )
     if not public_media_enabled:
         raise BrrrMediaError(
@@ -98,27 +115,37 @@ def _cache_media_file(
     cache_dir.mkdir(parents=True, exist_ok=True)
     _cleanup_cache(cache_dir, ttl_hours)
 
-    digest = hashlib.sha256()
-    with source_path.open("rb") as source:
-        for chunk in iter(lambda: source.read(1024 * 1024), b""):
-            digest.update(chunk)
-
     suffix = source_path.suffix.lower()
     if not suffix and mime_type:
         suffix = mimetypes.guess_extension(mime_type) or ""
     if suffix not in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".heic"}:
         raise BrrrMediaError("Selected media must be a supported image file")
 
-    filename = f"{digest.hexdigest()[:32]}{suffix}"
+    filename = f"{secrets.token_urlsafe(24)}{suffix}"
     destination = cache_dir / filename
-    if not destination.exists():
-        shutil.copyfile(source_path, destination)
+    shutil.copyfile(source_path, destination)
     return filename
 
 
-def _cleanup_cache(cache_dir: Path, ttl_hours: int) -> None:
+def _cleanup_cache(
+    cache_dir: Path,
+    ttl_hours: int,
+    remove_all: bool = False,
+) -> int:
     """Remove expired generated public-media files."""
+    if not cache_dir.is_dir():
+        return 0
+
     cutoff = time.time() - max(ttl_hours, 1) * 3600
+    removed = 0
     for item in cache_dir.iterdir():
-        if item.is_file() and item.stat().st_mtime < cutoff:
+        try:
+            should_remove = item.is_file() and (
+                remove_all or item.stat().st_mtime < cutoff
+            )
+        except FileNotFoundError:
+            continue
+        if should_remove:
             item.unlink(missing_ok=True)
+            removed += 1
+    return removed
