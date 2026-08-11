@@ -56,6 +56,9 @@ class BrrrRuntimeData:
 type BrrrConfigEntry = ConfigEntry[BrrrRuntimeData]
 
 
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+
 SERVICE_SCHEMA = vol.Schema(
     {
         vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string,
