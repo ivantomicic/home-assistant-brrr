@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+.venv/
+venv/
+.tox/
+.nox/
+build/
+dist/
+*.egg-info/
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.log
+
+# Local credentials and Home Assistant instance data
+.env
+.env.*
+!.env.example
+/configuration.yaml
+/secrets.yaml
+/.storage/
+/backups/
+
+# Generated/local handoff files
+/brrr-notifications-*.zip
+/COMMIT_PLAN.md
+/REPOSITORY_SETUP.md
