@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Brrr Notifications">
-  <rect width="512" height="512" rx="112" fill="#111827"/>
-  <path d="M256 88v336M111 172l290 168M111 340l290-168" fill="none" stroke="#67e8f9" stroke-width="34" stroke-linecap="round"/>
-  <path d="m256 88-35 42m35-42 35 42M256 424l-35-42m35 42 35-42M111 172l55 9m-55-9 20-52M401 340l-55-9m55 9-20 52M111 340l20 52m-20-52 55-9M401 172l-20-52m20 52-55 9" fill="none" stroke="#67e8f9" stroke-width="24" stroke-linecap="round"/>
-  <circle cx="256" cy="256" r="58" fill="#f8fafc"/>
-  <path d="M233 276h46c-7-8-10-19-10-32 0-10-6-18-13-18s-13 8-13 18c0 13-3 24-10 32Zm17 10h12c-1 8-5 13-12 13s-11-5-12-13h12Z" fill="#111827"/>
-</svg>
